@@ -1,0 +1,36 @@
+# Actual Budget configuration (contains passwords)
+config.py
+
+# Bash script configuration (contains API keys and credentials)
+cc_payment_check.config
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment (if you use one)
+venv/
+env/
+actualpy/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Actual Budget data directory (if you download budgets locally)
+actual_data/
+data/
+datadir/
+*.sqlite
+
+# Temporary report outputs
+/tmp/cc_payment_report_*.txt

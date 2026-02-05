@@ -1,0 +1,17 @@
+#!/bin/bash
+# Configuration file for Credit Card Payment Report
+# Copy this to cc_payment_check.config and fill in your actual values
+
+# Healthcheck URL
+HEALTHCHECK_URL="https://hc-ping.com/YOUR_HEALTHCHECK_ID/cc-payment-report"
+
+# Mailgun settings
+MAILGUN_API_KEY="YOUR_MAILGUN_API_KEY"
+MAILGUN_DOMAIN="YOUR_MAILGUN_DOMAIN"  # e.g., mg.yourdomain.com
+EMAIL_TO="your-email@example.com"
+EMAIL_FROM="Credit Card Report <noreply@${MAILGUN_DOMAIN}>"
+
+# Paths
+SCRIPT_DIR="/home/pi/cc_payment_report"
+VENV_PATH="/home/pi/pyactual/bin/activate"
+REPORT_OUTPUT="/tmp/cc_payment_report_$(date +%Y%m%d_%H%M%S).txt"
