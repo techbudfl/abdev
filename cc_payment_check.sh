@@ -28,7 +28,7 @@ echo "Running Credit Card Payment Report - $(date)" > "$REPORT_OUTPUT"
 echo "===============================================================================" >> "$REPORT_OUTPUT"
 echo "" >> "$REPORT_OUTPUT"
 
-python run_report.py >> "$REPORT_OUTPUT" 2>&1 || REPORT_EXIT=$?
+python -W ignore::UserWarning run_report.py >> "$REPORT_OUTPUT" 2>&1 || REPORT_EXIT=$?
 
 echo "" >> "$REPORT_OUTPUT"
 echo "===============================================================================" >> "$REPORT_OUTPUT"
