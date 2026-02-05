@@ -18,7 +18,7 @@ source "$CONFIG_FILE"
 source "$VENV_PATH"
 
 # Change to script directory
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_PATH"
 
 # Initialize exit code
 REPORT_EXIT=0
@@ -28,7 +28,7 @@ echo "Running Credit Card Payment Report - $(date)" > "$REPORT_OUTPUT"
 echo "===============================================================================" >> "$REPORT_OUTPUT"
 echo "" >> "$REPORT_OUTPUT"
 
-python cc_payment_report.py >> "$REPORT_OUTPUT" 2>&1 || REPORT_EXIT=$?
+python run_report.py >> "$REPORT_OUTPUT" 2>&1 || REPORT_EXIT=$?
 
 echo "" >> "$REPORT_OUTPUT"
 echo "===============================================================================" >> "$REPORT_OUTPUT"
