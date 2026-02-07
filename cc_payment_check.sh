@@ -41,13 +41,43 @@ else
   EMAIL_SUBJECT="❌ Credit Card Payment Report FAILED - $(date +%Y-%m-%d)"
 fi
 
-# Send email via Mailgun
+# NEW v3.1: Wrap the report in HTML with fixed-width font for better email rendering
+HTML_CONTENT="<!DOCTYPE html>
+<html>
+<head>
+  <meta charset=\"UTF-8\">
+  <style>
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      line-height: 1.4;
+      background-color: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+    }
+    pre {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      white-space: pre;
+      margin: 0;
+      background-color: #1e1e1e;
+      color: #d4d4d4;
+    }
+  </style>
+</head>
+<body>
+  <pre>$(cat $REPORT_OUTPUT)</pre>
+</body>
+</html>"
+
+# Send email via Mailgun with HTML content
 curl -s --user "api:${MAILGUN_API_KEY}" \
   "https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages" \
   -F from="${EMAIL_FROM}" \
   -F to="${EMAIL_TO}" \
   -F subject="${EMAIL_SUBJECT}" \
   -F text="$(cat $REPORT_OUTPUT)" \
+  -F html="${HTML_CONTENT}" \
   > /dev/null 2>&1
 
 MAIL_EXIT=$?
