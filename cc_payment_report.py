@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Credit Card Payment Report for Actual Budget - WORKING VERSION
+Credit Card Payment Report for Actual Budget - v2.0
 
 This tool generates a report showing which credit card accounts have received
 payments within +/- 2 weeks of the report run date.
+
+NEW in v2.0: Support for scheduled transactions (not just future-dated transactions)
 
 Requirements:
 - actualpy library (pip install actualpy)
@@ -13,6 +15,7 @@ Requirements:
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from dataclasses import dataclass
+import json
 
 from actual import Actual
 from actual.queries import get_accounts
@@ -24,6 +27,7 @@ class PaymentInfo:
     date: int  # YYYYMMDD format
     amount: float
     notes: Optional[str] = None
+    is_scheduled: bool = False  # NEW: indicates if this is a scheduled (not yet completed) payment
 
 
 @dataclass
@@ -59,6 +63,8 @@ def find_payment_in_range(
     """
     Find if a payment was made to this credit card account in the date range.
     A payment is a transfer where the payee's transfer_acct points to another account.
+    
+    This checks for COMPLETED payments (past or future-dated transactions).
     """
     from sqlalchemy import and_
     from actual.database import Transactions, Payees
@@ -96,8 +102,99 @@ def find_payment_in_range(
                         return PaymentInfo(
                             date=trans.date,
                             amount=trans.amount / 100.0,  # Convert from cents
-                            notes=trans.notes
+                            notes=trans.notes,
+                            is_scheduled=False
                         )
+    
+    return None
+
+
+def find_scheduled_payment_in_range(
+    account,
+    session,
+    start_date_int: int,
+    end_date_int: int,
+    today_int: int
+) -> Optional[PaymentInfo]:
+    """
+    Find if a payment is SCHEDULED for this credit card account in the date range.
+    
+    NEW in v2.0: Checks the Rules table for scheduled transactions.
+    
+    Scheduled transactions are stored as Rules with:
+    - date condition (the scheduled date)
+    - amount condition (in cents) 
+    - acct condition (the credit card account)
+    - link-schedule action
+    
+    Note: Ignores $0 amounts (these are reminders, not actual payments)
+    """
+    from actual.database import Rules
+    
+    # Get all rules (these include scheduled transactions)
+    rules = session.query(Rules).filter(
+        Rules.tombstone == 0
+    ).all()
+    
+    for rule in rules:
+        try:
+            # Parse the rule conditions
+            conditions = json.loads(rule.conditions) if rule.conditions else []
+            
+            # Extract relevant conditions
+            rule_date = None
+            rule_amount = None
+            rule_acct = None
+            
+            for cond in conditions:
+                field = cond.get('field')
+                value = cond.get('value')
+                
+                if field == 'date':
+                    # Date is stored as string like "2026-02-12"
+                    if isinstance(value, str):
+                        try:
+                            rule_date = int(value.replace('-', ''))
+                        except:
+                            pass
+                    elif isinstance(value, int):
+                        rule_date = value
+                        
+                elif field == 'amount':
+                    rule_amount = value
+                    
+                elif field == 'acct':
+                    rule_acct = value
+            
+            # Check if this rule matches our criteria
+            if (rule_acct == account.id and 
+                rule_date is not None and
+                rule_amount is not None and
+                start_date_int <= rule_date <= end_date_int and
+                rule_date > today_int and  # Only future scheduled payments
+                rule_amount != 0):  # Ignore $0 reminders
+                
+                # Check if there's a link-schedule action (confirms it's a scheduled transaction)
+                actions = json.loads(rule.actions) if rule.actions else []
+                has_schedule = any(action.get('op') == 'link-schedule' for action in actions)
+                
+                if has_schedule and rule_amount > 0:  # Positive amount = payment TO credit card
+                    # Extract notes if present
+                    notes = None
+                    for action in actions:
+                        if action.get('op') == 'set' and action.get('field') == 'notes':
+                            notes = action.get('value')
+                    
+                    return PaymentInfo(
+                        date=rule_date,
+                        amount=rule_amount / 100.0,  # Convert from cents
+                        notes=notes,
+                        is_scheduled=True
+                    )
+                    
+        except Exception:
+            # Skip rules that don't match the expected format
+            continue
     
     return None
 
@@ -113,6 +210,8 @@ def generate_report(
     """
     Generate the credit card payment report.
     
+    v2.0: Checks both completed payments AND scheduled payments
+    
     Returns a dict with two keys:
     - 'missing': list of accounts without payments
     - 'passed': list of accounts with payments
@@ -125,6 +224,7 @@ def generate_report(
     # Convert to YYYYMMDD integer format
     start_date_int = date_to_int(start_date)
     end_date_int = date_to_int(end_date)
+    today_int = date_to_int(today)
     
     print(f"🔍 Checking for payments between {start_date.date()} and {end_date.date()}")
     print(f"📅 Report run date: {today.date()}\n")
@@ -149,12 +249,23 @@ def generate_report(
         has_payments = []
         
         for account in credit_cards:
+            # Check for completed payment (existing v1.2 logic)
             payment = find_payment_in_range(
                 account, 
                 actual.session, 
                 start_date_int, 
                 end_date_int
             )
+            
+            # NEW v2.0: If no completed payment found, check for scheduled payment
+            if not payment:
+                payment = find_scheduled_payment_in_range(
+                    account,
+                    actual.session,
+                    start_date_int,
+                    end_date_int,
+                    today_int
+                )
             
             report = AccountReport(
                 account_name=account.name,
@@ -203,8 +314,12 @@ def print_report(results: Dict[str, List[AccountReport]]):
             # Convert date integer back to readable format
             date_obj = int_to_date(info.date)
             date_str = date_obj.strftime('%Y-%m-%d')
+            
+            # NEW v2.0: Add (scheduled) indicator for future scheduled payments
+            scheduled_marker = " (scheduled)" if info.is_scheduled else ""
+            
             notes_str = f" | {info.notes}" if info.notes else ""
-            print(f"  • {report.account_name} | {date_str} | ${info.amount:,.2f}{notes_str}")
+            print(f"  • {report.account_name} | {date_str} | ${info.amount:,.2f}{scheduled_marker}{notes_str}")
         print()
 
 
