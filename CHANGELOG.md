@@ -1,5 +1,26 @@
 # Changelog
 
+## [v3.1] - 2026-02-06
+
+### Changed
+- **NEW: Beautiful Rich table output!** - Replaced plain text output with styled tables using the `rich` library
+- Tables now have:
+  - Color-coded status indicators (🆕 green for paid, red for missing, yellow for scheduled)
+  - Rounded box borders
+  - Styled columns (cyan account names, yellow dates, green amounts)
+  - Professional table titles
+  - Proper alignment (amounts right-aligned, status centered)
+
+### Added
+- Dependency on `rich` library for table rendering
+- Color coding: ✅ (green) for paid, ⚠️ (red) for missing, 📅 (yellow) for scheduled
+- Separate tables for Credit Card Payments and Monitored Payee Payments
+
+### Technical Details
+- Uses `rich.table.Table` with `box.ROUNDED` style
+- Status column shows emoji + colored text
+- All values properly formatted (dates as YYYY-MM-DD, amounts with commas)
+
 ## [v3.0] - 2026-02-06
 
 ### Added
