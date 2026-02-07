@@ -41,11 +41,14 @@ else
   EMAIL_SUBJECT="❌ Credit Card Payment Report FAILED - $(date +%Y-%m-%d)"
 fi
 
-# NEW v3.1: Wrap the report in HTML with fixed-width font for better email rendering
-HTML_CONTENT="<!DOCTYPE html>
+# NEW v3.1: Create HTML file with fixed-width font for better email rendering
+HTML_OUTPUT="${REPORT_OUTPUT%.txt}.html"
+
+cat > "$HTML_OUTPUT" << 'EOF_HEADER'
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset=\"UTF-8\">
+  <meta charset="UTF-8">
   <style>
     body {
       font-family: 'Courier New', Courier, monospace;
@@ -66,18 +69,25 @@ HTML_CONTENT="<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <pre>$(cat $REPORT_OUTPUT)</pre>
-</body>
-</html>"
+  <pre>
+EOF_HEADER
 
-# Send email via Mailgun with HTML content
+cat "$REPORT_OUTPUT" >> "$HTML_OUTPUT"
+
+cat >> "$HTML_OUTPUT" << 'EOF_FOOTER'
+  </pre>
+</body>
+</html>
+EOF_FOOTER
+
+# Send email via Mailgun with HTML content from file
 curl -s --user "api:${MAILGUN_API_KEY}" \
   "https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages" \
   -F from="${EMAIL_FROM}" \
   -F to="${EMAIL_TO}" \
   -F subject="${EMAIL_SUBJECT}" \
-  -F text="$(cat $REPORT_OUTPUT)" \
-  -F html="${HTML_CONTENT}" \
+  -F text="<${REPORT_OUTPUT}" \
+  -F html="<${HTML_OUTPUT}" \
   > /dev/null 2>&1
 
 MAIL_EXIT=$?
@@ -89,8 +99,8 @@ else
   curl -fsS --retry 3 -m 10 "$HEALTHCHECK_URL/fail" >/dev/null 2>&1  # Fail ping
 fi
 
-# Clean up temp file (optional - keep for debugging if needed)
-# rm "$REPORT_OUTPUT"
+# Clean up temp files (optional - keep for debugging if needed)
+# rm "$REPORT_OUTPUT" "$HTML_OUTPUT"
 
 # Output to console
 cat "$REPORT_OUTPUT"
