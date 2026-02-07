@@ -18,3 +18,11 @@ DATA_DIR = None  # or "/path/to/data/directory"
 
 # Optional: SSL certificate path (or False to disable verification)
 CERT = None  # or "/path/to/cert.pem" or False
+
+# NEW in v3.0: List of payees to monitor for payments
+# Add payee names (or partial names) that you want to track
+# The system will check if payments were made to these payees in the date range
+MONITORED_PAYEES = [
+    "Target",
+    "Auto Financing"
+]

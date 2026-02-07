@@ -1,5 +1,43 @@
 # Changelog
 
+## [v3.0] - 2026-02-06
+
+### Added
+- **Monitored payee support** - Track payments to specific payees (e.g., Target, BMW Financing)
+- `MONITORED_PAYEES` config list in config file for specifying which payees to monitor
+- `PayeeReport` dataclass for payee payment information
+- `find_payee_payment_in_range()` - Check for completed payments to monitored payees
+- `find_scheduled_payee_payment_in_range()` - Check for scheduled payments to monitored payees
+- Separate report section for monitored payee payments
+
+### Changed
+- `generate_report()` - Now returns 4 keys: `cc_missing`, `cc_passed`, `payee_missing`, `payee_passed`
+- `print_report()` - Now displays both credit card and monitored payee sections
+- Report title changed from "CREDIT CARD PAYMENT REPORT" to "PAYMENT REPORT"
+
+### Technical Details
+- Payee matching uses case-insensitive partial name matching
+- Looks for negative amounts (money going out) for payee payments
+- Supports both completed and scheduled payee payments
+
+## [v2.0] - 2026-02-06
+
+### Added
+- **Scheduled transaction support** - Now detects scheduled payments in the Rules table, not just future-dated transactions
+- Added `is_scheduled` field to PaymentInfo to distinguish scheduled vs completed payments
+- Scheduled payments show with "(scheduled)" marker in the report
+- Ignores $0 scheduled transactions (these are reminders, not actual payments)
+
+### Changed
+- `find_scheduled_payment_in_range()` - NEW function to check Rules table for scheduled payments
+- `generate_report()` - Now checks BOTH completed payments AND scheduled payments
+- `print_report()` - Adds "(scheduled)" indicator for future scheduled payments
+
+### Technical Details
+- Scheduled transactions are stored as Rules with conditions for date, amount, and account
+- Only considers rules with `link-schedule` action and positive amounts
+- Only looks at future scheduled dates (not past)
+
 ## [v1.2] - 2026-02-06
 
 ### Changed

@@ -31,7 +31,7 @@ config = {
 2. Run:
 
 ```bash
-python cc_payment_report.py
+python run_report.py
 ```
 
 ## Output Example
@@ -54,7 +54,7 @@ CREDIT CARD PAYMENT REPORT
 ✅ PAYMENTS FOUND
 --------------------------------------------------------------------------------
   • 💳 Chase United | 2026-01-06 | $163.03 | 7027
-  • 💳 Capital One  | 2026-01-05 | $7,016.80 | 
+  • 💳 Capital One  | 2026-01-05 | $1,016.80 | 
 ```
 
 ## How It Works

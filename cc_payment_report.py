@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Credit Card Payment Report for Actual Budget - v2.0
+Credit Card Payment Report for Actual Budget - v3.0
 
-This tool generates a report showing which credit card accounts have received
-payments within +/- 2 weeks of the report run date.
+This tool generates a report showing:
+1. Credit card accounts that have received payments
+2. Monitored payees that have received payments
 
-NEW in v2.0: Support for scheduled transactions (not just future-dated transactions)
+NEW in v3.0: Monitor specific payees (like Target, BMW Financing) for payments
 
 Requirements:
 - actualpy library (pip install actualpy)
@@ -27,13 +28,21 @@ class PaymentInfo:
     date: int  # YYYYMMDD format
     amount: float
     notes: Optional[str] = None
-    is_scheduled: bool = False  # NEW: indicates if this is a scheduled (not yet completed) payment
+    is_scheduled: bool = False
 
 
 @dataclass
 class AccountReport:
     """Report data for a single credit card account"""
     account_name: str
+    has_payment: bool
+    payment_info: Optional[PaymentInfo] = None
+
+
+@dataclass  
+class PayeeReport:
+    """NEW v3.0: Report data for a monitored payee"""
+    payee_name: str
     has_payment: bool
     payment_info: Optional[PaymentInfo] = None
 
@@ -119,7 +128,7 @@ def find_scheduled_payment_in_range(
     """
     Find if a payment is SCHEDULED for this credit card account in the date range.
     
-    NEW in v2.0: Checks the Rules table for scheduled transactions.
+    v2.0: Checks the Rules table for scheduled transactions.
     
     Scheduled transactions are stored as Rules with:
     - date condition (the scheduled date)
@@ -199,22 +208,169 @@ def find_scheduled_payment_in_range(
     return None
 
 
+def find_payee_payment_in_range(
+    payee_name: str,
+    session,
+    start_date_int: int,
+    end_date_int: int
+) -> Optional[PaymentInfo]:
+    """
+    NEW v3.0: Find if a payment was made to a specific payee in the date range.
+    
+    This looks for ANY transaction (from any account) to the specified payee.
+    Negative amounts indicate money going OUT (payment being made).
+    """
+    from sqlalchemy import and_, or_
+    from actual.database import Transactions, Payees
+    
+    # Find the payee by name (case-insensitive partial match)
+    payees = session.query(Payees).filter(
+        Payees.tombstone == 0
+    ).all()
+    
+    matching_payee = None
+    for p in payees:
+        if p.name and payee_name.lower() in p.name.lower():
+            matching_payee = p
+            break
+    
+    if not matching_payee:
+        return None
+    
+    # Find transactions to this payee in the date range
+    transactions = session.query(Transactions).filter(
+        and_(
+            Transactions.payee_id == matching_payee.id,
+            Transactions.date >= start_date_int,
+            Transactions.date <= end_date_int,
+            Transactions.amount < 0,  # Negative = money going out (payment)
+            Transactions.tombstone == 0,
+            Transactions.is_parent == 0
+        )
+    ).order_by(Transactions.date.desc()).all()
+    
+    if transactions:
+        # Return the most recent payment
+        trans = transactions[0]
+        return PaymentInfo(
+            date=trans.date,
+            amount=abs(trans.amount / 100.0),  # Make positive for display
+            notes=trans.notes,
+            is_scheduled=False
+        )
+    
+    return None
+
+
+def find_scheduled_payee_payment_in_range(
+    payee_name: str,
+    session,
+    start_date_int: int,
+    end_date_int: int,
+    today_int: int
+) -> Optional[PaymentInfo]:
+    """
+    NEW v3.0: Find if a payment is SCHEDULED to a specific payee.
+    
+    Looks in the Rules table for scheduled transactions to this payee.
+    """
+    from actual.database import Rules, Payees
+    
+    # Find the payee by name
+    payees = session.query(Payees).filter(
+        Payees.tombstone == 0
+    ).all()
+    
+    matching_payee = None
+    for p in payees:
+        if p.name and payee_name.lower() in p.name.lower():
+            matching_payee = p
+            break
+    
+    if not matching_payee:
+        return None
+    
+    # Get all rules
+    rules = session.query(Rules).filter(
+        Rules.tombstone == 0
+    ).all()
+    
+    for rule in rules:
+        try:
+            conditions = json.loads(rule.conditions) if rule.conditions else []
+            
+            rule_date = None
+            rule_amount = None
+            rule_description = None
+            
+            for cond in conditions:
+                field = cond.get('field')
+                value = cond.get('value')
+                
+                if field == 'date':
+                    if isinstance(value, str):
+                        try:
+                            rule_date = int(value.replace('-', ''))
+                        except:
+                            pass
+                    elif isinstance(value, int):
+                        rule_date = value
+                        
+                elif field == 'amount':
+                    rule_amount = value
+                    
+                elif field == 'description':
+                    rule_description = value
+            
+            # Check if this rule matches the payee and date range
+            if (rule_description == matching_payee.id and
+                rule_date is not None and
+                rule_amount is not None and
+                start_date_int <= rule_date <= end_date_int and
+                rule_date > today_int and
+                rule_amount != 0):
+                
+                actions = json.loads(rule.actions) if rule.actions else []
+                has_schedule = any(action.get('op') == 'link-schedule' for action in actions)
+                
+                if has_schedule and rule_amount < 0:  # Negative = payment out
+                    notes = None
+                    for action in actions:
+                        if action.get('op') == 'set' and action.get('field') == 'notes':
+                            notes = action.get('value')
+                    
+                    return PaymentInfo(
+                        date=rule_date,
+                        amount=abs(rule_amount / 100.0),
+                        notes=notes,
+                        is_scheduled=True
+                    )
+                    
+        except Exception:
+            continue
+    
+    return None
+
+
 def generate_report(
     base_url: str,
     password: str,
     file: str,
+    monitored_payees: Optional[List[str]] = None,
     encryption_password: Optional[str] = None,
     data_dir: Optional[str] = None,
     cert: Optional[str] = None
-) -> Dict[str, List[AccountReport]]:
+) -> Dict[str, List]:
     """
-    Generate the credit card payment report.
+    Generate the payment report.
     
-    v2.0: Checks both completed payments AND scheduled payments
+    v3.0: Returns both credit card payments AND monitored payee payments
     
-    Returns a dict with two keys:
-    - 'missing': list of accounts without payments
-    - 'passed': list of accounts with payments
+    Returns a dict with four keys:
+    - 'cc_missing': list of credit cards without payments
+    - 'cc_passed': list of credit cards with payments
+    - 'payee_missing': list of payees without payments (NEW v3.0)
+    - 'payee_passed': list of payees with payments (NEW v3.0)
     """
     # Calculate date range: +/- 2 weeks from today
     today = datetime.now()
@@ -237,19 +393,16 @@ def generate_report(
         data_dir=data_dir,
         cert=cert
     ) as actual:
-        # Get all accounts
+        # === CREDIT CARD LOGIC (v1.x/v2.x) ===
         accounts = get_accounts(actual.session)
-        
-        # Filter for credit card accounts
         credit_cards = [acc for acc in accounts if is_credit_card_account(acc)]
         
-        print(f"💳 Found {len(credit_cards)} credit card accounts\n")
+        print(f"💳 Found {len(credit_cards)} credit card accounts")
         
-        missing_payments = []
-        has_payments = []
+        cc_missing_payments = []
+        cc_has_payments = []
         
         for account in credit_cards:
-            # Check for completed payment (existing v1.2 logic)
             payment = find_payment_in_range(
                 account, 
                 actual.session, 
@@ -257,7 +410,6 @@ def generate_report(
                 end_date_int
             )
             
-            # NEW v2.0: If no completed payment found, check for scheduled payment
             if not payment:
                 payment = find_scheduled_payment_in_range(
                     account,
@@ -274,53 +426,106 @@ def generate_report(
             )
             
             if payment:
-                has_payments.append(report)
+                cc_has_payments.append(report)
             else:
-                # Only include in missing payments if balance is not zero
-                # Account balance is in cents, but can be None for closed/inactive accounts
                 if account.balance_current is not None and account.balance_current != 0:
-                    missing_payments.append(report)
+                    cc_missing_payments.append(report)
+        
+        # === NEW v3.0: MONITORED PAYEE LOGIC ===
+        payee_missing_payments = []
+        payee_has_payments = []
+        
+        if monitored_payees:
+            print(f"👤 Checking {len(monitored_payees)} monitored payee(s)")
+            
+            for payee_name in monitored_payees:
+                payment = find_payee_payment_in_range(
+                    payee_name,
+                    actual.session,
+                    start_date_int,
+                    end_date_int
+                )
+                
+                if not payment:
+                    payment = find_scheduled_payee_payment_in_range(
+                        payee_name,
+                        actual.session,
+                        start_date_int,
+                        end_date_int,
+                        today_int
+                    )
+                
+                report = PayeeReport(
+                    payee_name=payee_name,
+                    has_payment=payment is not None,
+                    payment_info=payment
+                )
+                
+                if payment:
+                    payee_has_payments.append(report)
+                else:
+                    payee_missing_payments.append(report)
+        
+        print()  # Blank line before report
         
         return {
-            'missing': missing_payments,
-            'passed': has_payments
+            'cc_missing': cc_missing_payments,
+            'cc_passed': cc_has_payments,
+            'payee_missing': payee_missing_payments,
+            'payee_passed': payee_has_payments
         }
 
 
-def print_report(results: Dict[str, List[AccountReport]]):
+def print_report(results: Dict[str, List]):
     """Print the report to console"""
     print("=" * 80)
-    print("CREDIT CARD PAYMENT REPORT")
+    print("PAYMENT REPORT")
     print("=" * 80)
     print()
     
-    # Print missing payments first
-    if results['missing']:
-        print("⚠️  MISSING PAYMENTS (No payment found in date range)")
-        print("-" * 80)
-        for report in results['missing']:
-            print(f"  • {report.account_name}")
-        print()
-    else:
-        print("✅ All credit card accounts have payments!")
-        print()
+    # === CREDIT CARD SECTION ===
+    print("💳 CREDIT CARD PAYMENTS")
+    print("-" * 80)
     
-    # Print accounts with payments
-    if results['passed']:
-        print("✅ PAYMENTS FOUND")
-        print("-" * 80)
-        for report in results['passed']:
+    if results['cc_missing']:
+        print("\n⚠️  MISSING PAYMENTS")
+        for report in results['cc_missing']:
+            print(f"  • {report.account_name}")
+    
+    if results['cc_passed']:
+        print("\n✅ PAYMENTS FOUND")
+        for report in results['cc_passed']:
             info = report.payment_info
-            # Convert date integer back to readable format
             date_obj = int_to_date(info.date)
             date_str = date_obj.strftime('%Y-%m-%d')
-            
-            # NEW v2.0: Add (scheduled) indicator for future scheduled payments
             scheduled_marker = " (scheduled)" if info.is_scheduled else ""
-            
             notes_str = f" | {info.notes}" if info.notes else ""
             print(f"  • {report.account_name} | {date_str} | ${info.amount:,.2f}{scheduled_marker}{notes_str}")
-        print()
+    
+    if not results['cc_missing'] and not results['cc_passed']:
+        print("  No credit card accounts to report")
+    
+    # === NEW v3.0: MONITORED PAYEE SECTION ===
+    if results['payee_missing'] or results['payee_passed']:
+        print("\n\n👤 MONITORED PAYEE PAYMENTS")
+        print("-" * 80)
+        
+        if results['payee_missing']:
+            print("\n⚠️  MISSING PAYMENTS")
+            for report in results['payee_missing']:
+                print(f"  • {report.payee_name}")
+        
+        if results['payee_passed']:
+            print("\n✅ PAYMENTS FOUND")
+            for report in results['payee_passed']:
+                info = report.payment_info
+                date_obj = int_to_date(info.date)
+                date_str = date_obj.strftime('%Y-%m-%d')
+                scheduled_marker = " (scheduled)" if info.is_scheduled else ""
+                notes_str = f" | {info.notes}" if info.notes else ""
+                print(f"  • {report.payee_name} | {date_str} | ${info.amount:,.2f}{scheduled_marker}{notes_str}")
+    
+    print("\n" + "=" * 80)
 
 
 def main():
@@ -334,6 +539,7 @@ def main():
         'base_url': 'http://localhost:5006',  # Your Actual server URL
         'password': 'your_password',           # Server password
         'file': 'My Budget',                   # Budget file name or ID
+        'monitored_payees': ['Target', 'BMW Financing'],  # NEW v3.0
         'encryption_password': None,           # Optional: encryption password
         'data_dir': None,                      # Optional: data directory
         'cert': None,                          # Optional: cert file path
