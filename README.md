@@ -16,8 +16,9 @@ schedule and email the results.
 - **Monitored payee support** — Tracks payments to arbitrary payees (e.g. `Target`,
   `BMW Financing`) configured in `config.py`, reported in their own section.
 - **Autopay annotation** — Credit card accounts tagged `#autopay` in their Actual account
-  notes are annotated with `(autopay)` when flagged as missing. This helps distinguish a
-  genuinely missed payment from an autopay that is simply scheduled more than two weeks out.
+  notes are listed in their own "AUTOPAY — OUTSIDE WINDOW" section when no payment is found,
+  rather than in the main MISSING PAYMENTS section. This separates accounts that need
+  attention from those whose autopay is simply scheduled more than two weeks out.
 - **Email + monitoring** — A companion bash script emails the report via Mailgun and pings
   a [Healthchecks.io](https://healthchecks.io/) URL for success/failure monitoring.
 
@@ -25,7 +26,8 @@ schedule and email the results.
 
 See `CHANGELOG.md` for full details. Highlights:
 
-- **v3.2** — Autopay account annotation (`#autopay` tag in notes); `CERT` config fix.
+- **v3.3** — Dedicated "AUTOPAY — OUTSIDE WINDOW" section for missing autopay accounts.
+- **v3.2** — Autopay account detection (`#autopay` tag in notes); `CERT` config fix.
 - **v3.0** — Monitored payee support.
 - **v2.0** — Scheduled transaction (Rules table) support.
 - **v1.x** — Initial credit card payment detection, modular structure, warning suppression.
@@ -75,10 +77,10 @@ MONITORED_PAYEES = [
 ### 2. Marking accounts as autopay
 
 There is no setting for autopay in `config.py`. Instead, add the tag `#autopay` anywhere in
-an account's **Notes** field inside Actual Budget. Accounts tagged this way are annotated
-with `(autopay)` in the report when they would otherwise be flagged as missing. The match is
-case-insensitive, and the literal `#autopay` tag is required — prose like "autopay on the
-5th" without the tag is intentionally ignored.
+an account's **Notes** field inside Actual Budget. Accounts tagged this way are listed in a
+separate "AUTOPAY — OUTSIDE WINDOW" section of the report when no payment is found, instead of
+the main MISSING PAYMENTS section. The match is case-insensitive, and the literal `#autopay`
+tag is required — prose like "autopay on the 5th" without the tag is intentionally ignored.
 
 ### 3. Email/automation config (`cc_payment_check.config`) — optional
 
@@ -137,7 +139,9 @@ PAYMENT REPORT
 
 ⚠️  MISSING PAYMENTS
   • 💳 BofA Susan 1.5
-  • 💳 Chase Amazon (autopay)
+
+🔁 AUTOPAY — OUTSIDE WINDOW
+  • 💳 Chase Amazon
 
 ✅ PAYMENTS FOUND
   • 💳 Chase United | 2026-05-21 | $1,345.87 | PAYMENT TO CHASE CARD
@@ -161,10 +165,12 @@ PAYMENT REPORT
 2. **Credit cards:** finds all accounts whose name starts with `💳`. For each, it looks for
    a payment within ±2 weeks — first as a completed/future-dated transfer, then (if none) as
    a scheduled transaction in the Rules table. Accounts with a `None` or `0` balance are
-   excluded from the missing list. Missing accounts tagged `#autopay` are annotated.
+   excluded from the missing list. Missing accounts tagged `#autopay` are reported in a
+   separate "AUTOPAY — OUTSIDE WINDOW" section rather than with the other missing payments.
 3. **Monitored payees:** for each configured payee, looks for an outgoing payment within the
    same window (completed or scheduled).
-4. Prints a two-section report; the bash wrapper optionally emails it and pings a healthcheck.
+4. Prints the report (credit card sections followed by the monitored payee section); the bash
+   wrapper optionally emails it and pings a healthcheck.
 
 ## Files
 
