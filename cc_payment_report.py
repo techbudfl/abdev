@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-Credit Card Payment Report for Actual Budget - v3.0
+Credit Card Payment Report for Actual Budget - v3.2
 
 This tool generates a report showing:
 1. Credit card accounts that have received payments
 2. Monitored payees that have received payments
 
+NEW in v3.2: Accounts tagged '#autopay' in their notes are annotated with
+             '(autopay)' when flagged as missing, since autopay payments are
+             often scheduled more than two weeks out.
 NEW in v3.0: Monitor specific payees (like Target, BMW Financing) for payments
 
 Requirements:
@@ -37,6 +40,7 @@ class AccountReport:
     account_name: str
     has_payment: bool
     payment_info: Optional[PaymentInfo] = None
+    is_autopay: bool = False  # NEW v3.2: account is tagged #autopay in its notes
 
 
 @dataclass  
@@ -50,6 +54,21 @@ class PayeeReport:
 def is_credit_card_account(account) -> bool:
     """Check if an account is a credit card (name starts with 💳)"""
     return account.name and account.name.startswith('💳')
+
+
+def is_autopay_account(account) -> bool:
+    """
+    NEW v3.2: Check if an account is on autopay.
+
+    Autopay accounts are tagged with '#autopay' in the account's notes field.
+    Autopay payments are often scheduled more than two weeks out, so they can be
+    inadvertently flagged as missing. This lets the report annotate such accounts
+    with '(autopay)' so the missing flag can be interpreted accordingly.
+    """
+    notes = getattr(account, 'notes', None)
+    if notes and isinstance(notes, str):
+        return '#autopay' in notes.lower()
+    return False
 
 
 def date_to_int(date_obj: datetime) -> int:
@@ -429,6 +448,8 @@ def generate_report(
                 cc_has_payments.append(report)
             else:
                 if account.balance_current is not None and account.balance_current != 0:
+                    # NEW v3.2: note whether this missing account is on autopay
+                    report.is_autopay = is_autopay_account(account)
                     cc_missing_payments.append(report)
         
         # === NEW v3.0: MONITORED PAYEE LOGIC ===
@@ -490,7 +511,9 @@ def print_report(results: Dict[str, List]):
     if results['cc_missing']:
         print("\n⚠️  MISSING PAYMENTS")
         for report in results['cc_missing']:
-            print(f"  • {report.account_name}")
+            # NEW v3.2: annotate autopay accounts (payment may just be scheduled >2 weeks out)
+            autopay_marker = " (autopay)" if report.is_autopay else ""
+            print(f"  • {report.account_name}{autopay_marker}")
     
     if results['cc_passed']:
         print("\n✅ PAYMENTS FOUND")

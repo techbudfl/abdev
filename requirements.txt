@@ -1,0 +1,12 @@
+# Credit Card Payment Report - Python dependencies
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# actualpy is the only direct dependency; it pulls in everything else
+# (httpx, sqlalchemy, sqlmodel, pydantic, cryptography, etc.) automatically.
+#
+# Pinned to the version verified working with this project. Newer versions
+# should generally work too, but note that actualpy >= ~0.22 requires the
+# CERT setting in config.py to be True/False/path (NOT None).
+actualpy==0.22.2
