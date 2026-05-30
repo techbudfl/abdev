@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Credit Card Payment Report for Actual Budget - v3.2
+Credit Card Payment Report for Actual Budget - v3.3
 
 This tool generates a report showing:
 1. Credit card accounts that have received payments
 2. Monitored payees that have received payments
 
-NEW in v3.2: Accounts tagged '#autopay' in their notes are annotated with
-             '(autopay)' when flagged as missing, since autopay payments are
-             often scheduled more than two weeks out.
+NEW in v3.3: Credit card accounts on autopay that are missing a payment are now
+             listed in their own "MISSING BUT ON AUTOPAY" section, instead of
+             being shown inline with an "(autopay)" suffix.
+NEW in v3.2: Accounts tagged '#autopay' in their notes are detected via the
+             account notes field.
 NEW in v3.0: Monitor specific payees (like Target, BMW Financing) for payments
 
 Requirements:
@@ -385,8 +387,9 @@ def generate_report(
     
     v3.0: Returns both credit card payments AND monitored payee payments
     
-    Returns a dict with four keys:
-    - 'cc_missing': list of credit cards without payments
+    Returns a dict with these keys:
+    - 'cc_missing': list of credit cards without payments (not on autopay)
+    - 'cc_autopay_missing': list of credit cards without payments but on autopay (NEW v3.3)
     - 'cc_passed': list of credit cards with payments
     - 'payee_missing': list of payees without payments (NEW v3.0)
     - 'payee_passed': list of payees with payments (NEW v3.0)
@@ -419,6 +422,7 @@ def generate_report(
         print(f"💳 Found {len(credit_cards)} credit card accounts")
         
         cc_missing_payments = []
+        cc_autopay_missing_payments = []  # NEW v3.3: missing but on autopay
         cc_has_payments = []
         
         for account in credit_cards:
@@ -448,9 +452,12 @@ def generate_report(
                 cc_has_payments.append(report)
             else:
                 if account.balance_current is not None and account.balance_current != 0:
-                    # NEW v3.2: note whether this missing account is on autopay
-                    report.is_autopay = is_autopay_account(account)
-                    cc_missing_payments.append(report)
+                    # NEW v3.3: route autopay accounts into their own section
+                    if is_autopay_account(account):
+                        report.is_autopay = True
+                        cc_autopay_missing_payments.append(report)
+                    else:
+                        cc_missing_payments.append(report)
         
         # === NEW v3.0: MONITORED PAYEE LOGIC ===
         payee_missing_payments = []
@@ -491,6 +498,7 @@ def generate_report(
         
         return {
             'cc_missing': cc_missing_payments,
+            'cc_autopay_missing': cc_autopay_missing_payments,  # NEW v3.3
             'cc_passed': cc_has_payments,
             'payee_missing': payee_missing_payments,
             'payee_passed': payee_has_payments
@@ -511,9 +519,13 @@ def print_report(results: Dict[str, List]):
     if results['cc_missing']:
         print("\n⚠️  MISSING PAYMENTS")
         for report in results['cc_missing']:
-            # NEW v3.2: annotate autopay accounts (payment may just be scheduled >2 weeks out)
-            autopay_marker = " (autopay)" if report.is_autopay else ""
-            print(f"  • {report.account_name}{autopay_marker}")
+            print(f"  • {report.account_name}")
+    
+    # NEW v3.3: separate section for autopay accounts that are missing a payment
+    if results['cc_autopay_missing']:
+        print("\n🔁 AUTOPAY — OUTSIDE WINDOW")
+        for report in results['cc_autopay_missing']:
+            print(f"  • {report.account_name}")
     
     if results['cc_passed']:
         print("\n✅ PAYMENTS FOUND")
@@ -525,7 +537,7 @@ def print_report(results: Dict[str, List]):
             notes_str = f" | {info.notes}" if info.notes else ""
             print(f"  • {report.account_name} | {date_str} | ${info.amount:,.2f}{scheduled_marker}{notes_str}")
     
-    if not results['cc_missing'] and not results['cc_passed']:
+    if not results['cc_missing'] and not results['cc_autopay_missing'] and not results['cc_passed']:
         print("  No credit card accounts to report")
     
     # === NEW v3.0: MONITORED PAYEE SECTION ===

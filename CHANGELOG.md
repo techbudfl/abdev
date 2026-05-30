@@ -1,16 +1,34 @@
 # Changelog
 
+## [v3.3] - 2026-05-30
+
+### Changed
+- **Dedicated autopay section** - Credit card accounts on autopay that have no payment in
+  the window are now listed in their own "AUTOPAY — OUTSIDE WINDOW" section, rather than
+  appearing inline in MISSING PAYMENTS with an "(autopay)" suffix (introduced in v3.2).
+  This makes the report's three credit card sections: MISSING PAYMENTS,
+  AUTOPAY — OUTSIDE WINDOW, and PAYMENTS FOUND.
+- `generate_report()` - Now splits missing credit cards into two lists and returns an
+  additional `cc_autopay_missing` key.
+- `print_report()` - Renders the new section; the inline "(autopay)" suffix has been removed.
+
+### Technical Details
+- The header phrasing reflects that these accounts aren't necessarily unpaid — their autopay
+  is simply scheduled outside the ±2-week detection window.
+- Each section only prints when it has entries, so empty headers never appear.
+- Underlying autopay detection (the `#autopay` notes tag) is unchanged from v3.2.
+
 ## [v3.2] - 2026-05-30
 
 ### Added
-- **Autopay account support** - Credit card accounts tagged with `#autopay` in their
-  Actual Budget account notes are now annotated with `(autopay)` when flagged as missing
+- **Autopay account support** - Credit card accounts can be tagged with `#autopay` in their
+  Actual Budget account notes to mark them as on autopay
 - `is_autopay_account()` - Helper that checks an account's notes field for the `#autopay` tag
 - `is_autopay` field added to the `AccountReport` dataclass (defaults to `False`)
 
 ### Changed
-- `print_report()` - Missing credit card accounts on autopay now display as
-  "<account> (autopay)", mirroring how found payments show "(scheduled)"
+- `print_report()` - Missing credit card accounts on autopay were initially annotated inline
+  as "<account> (autopay)" (this was superseded by the dedicated section in v3.3)
 - `config.py` / `config_template.py` - `CERT` now defaults to `True` (validate against
   system CAs) instead of `None`. Newer versions of actualpy raise a TypeError when
   `cert=None` is passed, so `None` is no longer a valid value.
