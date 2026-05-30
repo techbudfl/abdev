@@ -1,5 +1,28 @@
 # Changelog
 
+## [v3.2] - 2026-05-30
+
+### Added
+- **Autopay account support** - Credit card accounts tagged with `#autopay` in their
+  Actual Budget account notes are now annotated with `(autopay)` when flagged as missing
+- `is_autopay_account()` - Helper that checks an account's notes field for the `#autopay` tag
+- `is_autopay` field added to the `AccountReport` dataclass (defaults to `False`)
+
+### Changed
+- `print_report()` - Missing credit card accounts on autopay now display as
+  "<account> (autopay)", mirroring how found payments show "(scheduled)"
+- `config.py` / `config_template.py` - `CERT` now defaults to `True` (validate against
+  system CAs) instead of `None`. Newer versions of actualpy raise a TypeError when
+  `cert=None` is passed, so `None` is no longer a valid value.
+
+### Technical Details
+- Autopay detection reads `account.notes` defensively; if the attribute is missing or
+  not a string, the account is simply treated as not-autopay (no crash)
+- The `#autopay` tag match is case-insensitive
+- Accounts whose notes mention "autopay" in prose but lack the literal `#autopay` tag are
+  intentionally NOT flagged (the tag is the deliberate signal)
+- This is an additive change; all existing payment-detection logic is unchanged
+
 ## [v3.0] - 2026-02-06
 
 ### Added
